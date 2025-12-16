@@ -7,8 +7,13 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-# Default DB path (good for Docker too)
-DEFAULT_DB_PATH = os.environ.get("DB_PATH", "./data/expenses.db")
+# Default DB path (can be overridden with env var DB_PATH)
+DEFAULT_DB_PATH = "./data/expenses.db"
+
+
+def resolve_db_path(db_path: str | None = None) -> str:
+    path = db_path or os.environ.get("DB_PATH") or DEFAULT_DB_PATH
+    return os.path.expanduser(path)
 
 
 @dataclass
@@ -21,14 +26,17 @@ class Summary:
     count: int
 
 
-def _connect(db_path: str = DEFAULT_DB_PATH) -> sqlite3.Connection:
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    conn = sqlite3.connect(db_path)
+def _connect(db_path: str | None = None) -> sqlite3.Connection:
+    path = resolve_db_path(db_path)
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     return conn
 
 
-def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
+def init_db(db_path: str | None = None) -> None:
     """
     Creates tables if they don't exist.
     """
@@ -90,7 +98,7 @@ def insert_transaction(
     parsed: Dict[str, Any],
     *,
     user_id: int,
-    db_path: str = DEFAULT_DB_PATH,
+    db_path: str | None = None,
     created_at: Optional[datetime] = None,
 ) -> int:
     """
@@ -134,7 +142,7 @@ def list_transactions(
     user_id: int,
     start: datetime,
     end: datetime,
-    db_path: str = DEFAULT_DB_PATH,
+    db_path: str | None = None,
 ) -> List[Dict[str, Any]]:
     """
     Return raw transactions in [start, end).
@@ -164,7 +172,7 @@ def get_recent_transactions(
     *,
     user_id: int,
     limit: int = 5,
-    db_path: str = DEFAULT_DB_PATH,
+    db_path: str | None = None,
 ) -> List[Dict[str, Any]]:
     """
     Return the most recent transactions for a user.
@@ -189,7 +197,7 @@ def delete_transaction(
     *,
     user_id: int,
     tx_id: int,
-    db_path: str = DEFAULT_DB_PATH,
+    db_path: str | None = None,
 ) -> bool:
     """
     Delete a transaction by id (scoped to user). Returns True if deleted.
@@ -209,7 +217,7 @@ def update_transaction(
     *,
     user_id: int,
     tx_id: int,
-    db_path: str = DEFAULT_DB_PATH,
+    db_path: str | None = None,
 ) -> bool:
     """
     Update a transaction by id (scoped to user). Returns True if updated.
@@ -253,7 +261,7 @@ def get_summary(
     user_id: int,
     start: datetime,
     end: datetime,
-    db_path: str = DEFAULT_DB_PATH,
+    db_path: str | None = None,
 ) -> Summary:
     """
     Summary in [start, end).
@@ -334,7 +342,7 @@ def get_week_summary(
     user_id: int,
     now: Optional[datetime] = None,
     week_start: int = 0,  # Monday
-    db_path: str = DEFAULT_DB_PATH,
+    db_path: str | None = None,
 ) -> Summary:
     now = now or datetime.now(timezone.utc)
     start = _start_of_week(now, week_start=week_start)
@@ -346,7 +354,7 @@ def get_month_summary(
     *,
     user_id: int,
     now: Optional[datetime] = None,
-    db_path: str = DEFAULT_DB_PATH,
+    db_path: str | None = None,
 ) -> Summary:
     now = now or datetime.now(timezone.utc)
     start = _start_of_month(now)

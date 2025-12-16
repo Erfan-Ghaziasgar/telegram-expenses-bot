@@ -7,16 +7,51 @@ FA_TO_EN_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789")
 AR_TO_EN_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
 
 RECEIVABLE_PATTERNS = [
-    r"باید\s*بهم\s*بده",
-    r"باید\s*به\s*من\s*بده",
-    r"باید\s*بهم\s*پرداخت\s*کنه",
-    r"بهم\s*بدهکار(?:ه|است)?",
+    # must pay me
+    r"باید\s*(?:بهم|به\s*من)\s*بده",
+    r"باید\s*پول(?:ش)?\s*(?:رو)?\s*(?:بهم|به\s*من)\s*بده",
+    # owes me
+    r"(?:بهم|به\s*من)\s*بدهکار(?:ه|است)?",
+    r"بدهکار(?:ه|است)?\s*(?:بهم|به\s*من)",
+    # I have a claim
+    r"از\s*\S+\s*طلب\s*دارم",
+    r"طلب(?:کار)?(?:م|ه)?",
+    r"طلبم\s*از\s*\S+",
+    # someone must pay
+    r"\S+\s*باید\s*بده",
+    r"\S+\s*باید\s*پول\s*بده",
+    # supposed to pay
+    r"قراره\s*(?:بهم|به\s*من)\s*بده",
+    r"قرار(?:ه|بود)?\s*پول\s*بده",
+    # transfer to me
+    r"باید\s*(?:بهم|به\s*من)\s*واریز\s*کنه",
+    r"واریز\s*کن(?:ه)?",
+    # settle by paying me
+    r"بده\s*حساب\s*شه",
 ]
+
 PAYABLE_PATTERNS = [
+    # must pay
     r"باید\s*بدم",
+    r"باید\s*پول\s*بدم",
+    # must pay someone
     r"باید\s*به\s*\S+\s*بدم",
-    r"باید\s*پرداخت\s*کنم",
+    r"باید\s*پول(?:ش)?\s*رو\s*به\s*\S+\s*بدم",
+    # I owe
     r"بدهکار(?:م|هستم)?",
+    r"من\s*بدهکار(?:م|هستم)?",
+    # borrowed money
+    r"قرض\s*گرفتم",
+    r"از\s*\S+\s*قرض\s*گرفتم",
+    # settle payment
+    r"باید\s*تسویه\s*کنم",
+    r"تسویه\s*حساب",
+    # pay / transfer
+    r"باید\s*پرداخت\s*کنم",
+    r"باید\s*واریز\s*کنم",
+    r"واریز\s*بدم",
+    # settle by paying
+    r"بدم\s*حساب\s*شه",
 ]
 
 AMOUNT_RE = re.compile(r"(?<!\d)(\d{1,12})(?!\d)")  # after digit normalization
@@ -59,7 +94,14 @@ def extract_person(text: str, direction: str) -> Optional[str]:
         if m:
             return m.group(1)
 
-    # Heuristic 2: "<name> باید ..." pattern for receivable/payable
+    # Heuristic 2: "از <name>" pattern for receivable/payable (e.g. "از ممد طلب دارم" / "از ممد قرض گرفتم")
+    m = re.search(r"از\s+([^\s]+)", text)
+    if m:
+        candidate = m.group(1)
+        if candidate not in ("من", "خودم", "خودمون", "خودت", "خودتون"):
+            return candidate
+
+    # Heuristic 3: "<name> باید ..." pattern for receivable/payable
     m = re.search(r"([^\s]+)\s+باید", text)
     if m:
         candidate = m.group(1)

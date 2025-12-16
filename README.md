@@ -15,6 +15,7 @@ Logs simple expenses/debts from chat messages (Persian-friendly) into SQLite and
    - Optional: `TELEGRAM_ALLOWED_USER_IDS="123456789"` (comma-separated)
    - Optional: `DB_PATH="./data/expenses.db"`
    - Optional: `LOG_LEVEL="INFO"`
+   - Note: `.env` is in `.gitignore` (not committed)
 
 Run the bot:
 - `python3 run.py`
@@ -23,12 +24,15 @@ Run the bot:
 
 Send a message like:
 - `100 تومن پول نون`
+- `۲۲۰ به ممد`
 - `220 تومن به ممد باید بدم`
 - `۱۵۰ تومن ممد باید بهم بده`
 
 Commands:
 - `/id` (show your Telegram user id)
-- `/last` (show recent records)
+- `/menu` (show command buttons)
+- `/hide` (hide command buttons)
+- `/last [n]` (show recent records)
 - `/undo` (delete last record)
 - `/delete <id>` (delete by id)
 - `/edit <id> <new text>` (edit by id)
