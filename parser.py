@@ -20,6 +20,7 @@ PAYABLE_PATTERNS = [
 ]
 
 AMOUNT_RE = re.compile(r"(?<!\d)(\d{1,12})(?!\d)")  # after digit normalization
+SHORT_PAYABLE_RE = re.compile(r"^\s*\d{1,12}\s*(?:تومن|تومان|ریال)?\s*به\s+[^\s]+\s*$")
 
 @dataclass
 class Parsed:
@@ -46,6 +47,9 @@ def detect_direction(text: str) -> str:
     for pat in PAYABLE_PATTERNS:
         if re.search(pat, text):
             return "payable"
+    # Shorthand: "<amount> به <name>" means you owe them
+    if SHORT_PAYABLE_RE.search(text):
+        return "payable"
     return "expense"
 
 def extract_person(text: str, direction: str) -> Optional[str]:
@@ -93,6 +97,7 @@ def parse_message(raw_text: str) -> Dict[str, Any]:
 if __name__ == "__main__":
     tests = [
         "100 تومن پول نون",
+        "۲۲۰ به ممد",
         "220 تومن به ممد باید بدم",
         "150 تومن ممد باید بهم بده",
         "۱۵۰ تومن ممد باید بهم بده",

@@ -28,6 +28,10 @@ Send a message like:
 
 Commands:
 - `/id` (show your Telegram user id)
+- `/last` (show recent records)
+- `/undo` (delete last record)
+- `/delete <id>` (delete by id)
+- `/edit <id> <new text>` (edit by id)
 - `/week` (weekly summary)
 - `/month` (monthly summary)
 - `/help`

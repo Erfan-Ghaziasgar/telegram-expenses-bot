@@ -49,7 +49,15 @@ _load_env_file()
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
-from db import format_summary_text, get_month_summary, get_week_summary, insert_transaction
+from db import (
+    delete_transaction,
+    format_summary_text,
+    get_month_summary,
+    get_recent_transactions,
+    get_week_summary,
+    insert_transaction,
+    update_transaction,
+)
 from parser import parse_message
 
 logging.basicConfig(
@@ -98,6 +106,10 @@ Send a message like:
 
 Commands:
 /id - show your Telegram user id
+/last - show recent records
+/undo - delete last record
+/delete <id> - delete by id
+/edit <id> <new text> - edit by id
 /week - weekly summary
 /month - monthly summary
 """
@@ -140,6 +152,131 @@ async def month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     summary = get_month_summary(user_id=user_id)
     await update.message.reply_text(format_summary_text(summary))
 
+
+async def last(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _is_allowed(update):
+        return
+    if not update.message:
+        return
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id is None:
+        return
+    limit = 5
+    if context.args:
+        try:
+            limit = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("Usage: /last [count]")
+            return
+
+    rows = get_recent_transactions(user_id=user_id, limit=limit)
+    if not rows:
+        await update.message.reply_text("No records yet.")
+        return
+
+    lines = ["Recent records:"]
+    for r in rows:
+        person = r.get("person") or "-"
+        desc = r.get("description") or "-"
+        created_at = (r.get("created_at") or "")[:19].replace("T", " ")
+        lines.append(
+            f"#{r['id']} | {r['amount']} | {r['direction']} | {person} | {desc} | {created_at}"
+        )
+    await update.message.reply_text("\n".join(lines))
+
+
+async def undo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _is_allowed(update):
+        return
+    if not update.message:
+        return
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id is None:
+        return
+
+    rows = get_recent_transactions(user_id=user_id, limit=1)
+    if not rows:
+        await update.message.reply_text("Nothing to undo.")
+        return
+    tx = rows[0]
+    if delete_transaction(user_id=user_id, tx_id=int(tx["id"])):
+        await update.message.reply_text(f"Deleted last record: #{tx['id']}")
+    else:
+        await update.message.reply_text("Couldn't delete the last record.")
+
+
+async def delete_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _is_allowed(update):
+        return
+    if not update.message:
+        return
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id is None:
+        return
+    if not context.args:
+        await update.message.reply_text("Usage: /delete <id>")
+        return
+    try:
+        tx_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("Usage: /delete <id>")
+        return
+    if delete_transaction(user_id=user_id, tx_id=tx_id):
+        await update.message.reply_text(f"Deleted: #{tx_id}")
+    else:
+        await update.message.reply_text("Not found (or not yours).")
+
+
+async def edit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _is_allowed(update):
+        return
+    if not update.message:
+        return
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id is None:
+        return
+    if len(context.args) < 2:
+        await update.message.reply_text("Usage: /edit <id> <new text>")
+        return
+    try:
+        tx_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("Usage: /edit <id> <new text>")
+        return
+    new_text = " ".join(context.args[1:]).strip()
+    if not new_text:
+        await update.message.reply_text("Usage: /edit <id> <new text>")
+        return
+    try:
+        parsed = parse_message(new_text)
+    except ValueError:
+        await update.message.reply_text("I couldn't find an amount in the new text.")
+        return
+    except Exception:
+        logger.exception("parse_message failed")
+        await update.message.reply_text("Sorry, I couldn't parse that message.")
+        return
+
+    if not update_transaction(parsed, user_id=user_id, tx_id=tx_id):
+        await update.message.reply_text("Not found (or not yours).")
+        return
+
+    amount = parsed.get("amount")
+    direction = parsed.get("direction")
+    person = parsed.get("person") or "-"
+    description = parsed.get("description") or "-"
+    await update.message.reply_text(
+        "\n".join(
+            [
+                f"Updated: #{tx_id}",
+                f"Amount: {amount}",
+                f"Type: {direction}",
+                f"Person: {person}",
+                f"Description: {description}",
+            ]
+        )
+    )
+
 async def my_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
@@ -170,7 +307,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     try:
-        insert_transaction(parsed, user_id=user_id)
+        tx_id = insert_transaction(parsed, user_id=user_id)
     except Exception:
         logger.exception("insert_transaction failed")
         await update.message.reply_text("Sorry, I couldn't save that right now.")
@@ -185,6 +322,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         "\n".join(
             [
                 "Saved.",
+                f"ID: {tx_id}",
                 f"Amount: {amount}",
                 f"Type: {direction}",
                 f"Person: {person}",
@@ -201,6 +339,10 @@ def main() -> None:
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("id", my_id))
+    app.add_handler(CommandHandler("last", last))
+    app.add_handler(CommandHandler("undo", undo))
+    app.add_handler(CommandHandler("delete", delete_cmd))
+    app.add_handler(CommandHandler("edit", edit))
     app.add_handler(CommandHandler("week", week))
     app.add_handler(CommandHandler("month", month))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))

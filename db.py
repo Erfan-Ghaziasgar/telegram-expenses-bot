@@ -160,6 +160,81 @@ def list_transactions(
     return [dict(r) for r in rows]
 
 
+def get_recent_transactions(
+    *,
+    user_id: int,
+    limit: int = 5,
+    db_path: str = DEFAULT_DB_PATH,
+) -> List[Dict[str, Any]]:
+    """
+    Return the most recent transactions for a user.
+    """
+    init_db(db_path)
+    limit = max(1, min(int(limit), 50))
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT id, amount, direction, person, description, raw, created_at
+            FROM transactions
+            WHERE user_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+            """,
+            (user_id, limit),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_transaction(
+    *,
+    user_id: int,
+    tx_id: int,
+    db_path: str = DEFAULT_DB_PATH,
+) -> bool:
+    """
+    Delete a transaction by id (scoped to user). Returns True if deleted.
+    """
+    init_db(db_path)
+    with _connect(db_path) as conn:
+        cur = conn.execute(
+            "DELETE FROM transactions WHERE id = ? AND user_id = ?",
+            (int(tx_id), int(user_id)),
+        )
+        conn.commit()
+        return bool(cur.rowcount)
+
+
+def update_transaction(
+    parsed: Dict[str, Any],
+    *,
+    user_id: int,
+    tx_id: int,
+    db_path: str = DEFAULT_DB_PATH,
+) -> bool:
+    """
+    Update a transaction by id (scoped to user). Returns True if updated.
+    """
+    init_db(db_path)
+
+    amount = int(parsed["amount"])
+    direction = parsed["direction"]
+    person = parsed.get("person")
+    description = parsed.get("description") or ""
+    raw = parsed.get("raw") or ""
+
+    with _connect(db_path) as conn:
+        cur = conn.execute(
+            """
+            UPDATE transactions
+            SET amount = ?, direction = ?, person = ?, description = ?, raw = ?
+            WHERE id = ? AND user_id = ?
+            """,
+            (amount, direction, person, description, raw, int(tx_id), int(user_id)),
+        )
+        conn.commit()
+        return bool(cur.rowcount)
+
+
 def _start_of_week(dt: datetime, week_start: int = 0) -> datetime:
     """
     week_start: 0=Monday, 6=Sunday
