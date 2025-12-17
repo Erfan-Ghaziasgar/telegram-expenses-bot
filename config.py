@@ -57,7 +57,8 @@ def _parse_allowed_user_ids(raw: str | None) -> set[int] | None:
 class Settings:
     token: str
     allowed_user_ids: set[int] | None
-    db_path: str
+    database_url: str
+    webhook_secret_token: str | None
     log_level: str
 
 
@@ -68,13 +69,34 @@ def load_settings() -> Settings:
             "Missing bot token. Set TELEGRAM_BOT_TOKEN (or BOT_TOKEN) environment variable."
         )
     allowed_user_ids = _parse_allowed_user_ids(os.environ.get("TELEGRAM_ALLOWED_USER_IDS"))
-    raw_db_path = (os.environ.get("DB_PATH") or "").strip()
-    db_path = raw_db_path or "./data/expenses.db"
-    db_path = str(Path(db_path).expanduser())
+    database_url = (
+        os.environ.get("DATABASE_URL")
+        or os.environ.get("SUPABASE_DATABASE_URL")
+        or os.environ.get("SUPABASE_DB_URL")
+        or ""
+    ).strip()
+    if not database_url:
+        raise RuntimeError(
+            "Missing database URL. Set DATABASE_URL (Supabase Postgres connection string)."
+        )
+    if database_url.startswith(("http://", "https://")):
+        raise RuntimeError(
+            "Invalid DATABASE_URL. Use the Supabase Postgres connection string "
+            "(postgresql://...), not the Supabase Project URL (https://...)."
+        )
+    if database_url.startswith("postgres://"):
+        database_url = "postgresql://" + database_url[len("postgres://") :]
+    if not database_url.startswith("postgresql://"):
+        raise RuntimeError(
+            "Invalid DATABASE_URL. Expected a Postgres connection string starting with "
+            "postgresql:// (or postgres://)."
+        )
+    webhook_secret_token = (os.environ.get("TELEGRAM_WEBHOOK_SECRET_TOKEN") or "").strip() or None
     log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
     return Settings(
         token=token,
         allowed_user_ids=allowed_user_ids,
-        db_path=db_path,
+        database_url=database_url,
+        webhook_secret_token=webhook_secret_token,
         log_level=log_level,
     )

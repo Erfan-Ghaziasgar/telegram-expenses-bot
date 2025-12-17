@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Final
+from typing import Any, Final
 
 from telegram import BotCommand, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.ext import (
@@ -78,8 +78,11 @@ def _settings(context: ContextTypes.DEFAULT_TYPE) -> Settings:
     return settings
 
 
-def _db_path(context: ContextTypes.DEFAULT_TYPE) -> str:
-    return _settings(context).db_path
+def _db_pool(context: ContextTypes.DEFAULT_TYPE) -> Any:
+    pool = context.application.bot_data.get("db_pool")
+    if pool is None:
+        raise RuntimeError("DB pool not initialized")
+    return pool
 
 
 def _user_id(update: Update) -> int | None:
@@ -125,7 +128,7 @@ async def week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = _user_id(update)
     if uid is None:
         return
-    summary = get_week_summary(user_id=uid, db_path=_db_path(context))
+    summary = await get_week_summary(user_id=uid, pool=_db_pool(context))
     await _reply(update, format_summary_text(summary))
 
 
@@ -135,7 +138,7 @@ async def month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = _user_id(update)
     if uid is None:
         return
-    summary = get_month_summary(user_id=uid, db_path=_db_path(context))
+    summary = await get_month_summary(user_id=uid, pool=_db_pool(context))
     await _reply(update, format_summary_text(summary))
 
 async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -165,7 +168,7 @@ async def last(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await _reply(update, "Usage: /last [count]")
             return
 
-    rows = get_recent_transactions(user_id=uid, limit=limit, db_path=_db_path(context))
+    rows = await get_recent_transactions(user_id=uid, limit=limit, pool=_db_pool(context))
     if not rows:
         await _reply(update, "No records yet.")
         return
@@ -188,12 +191,12 @@ async def undo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if uid is None:
         return
 
-    rows = get_recent_transactions(user_id=uid, limit=1, db_path=_db_path(context))
+    rows = await get_recent_transactions(user_id=uid, limit=1, pool=_db_pool(context))
     if not rows:
         await _reply(update, "Nothing to undo.")
         return
     tx = rows[0]
-    if delete_transaction(user_id=uid, tx_id=int(tx["id"]), db_path=_db_path(context)):
+    if await delete_transaction(user_id=uid, tx_id=int(tx["id"]), pool=_db_pool(context)):
         await _reply(update, f"Deleted last record: #{tx['id']}")
     else:
         await _reply(update, "Couldn't delete the last record.")
@@ -214,7 +217,7 @@ async def delete_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await _reply(update, "Usage: /delete <id>")
         return
 
-    if delete_transaction(user_id=uid, tx_id=tx_id, db_path=_db_path(context)):
+    if await delete_transaction(user_id=uid, tx_id=tx_id, pool=_db_pool(context)):
         await _reply(update, f"Deleted: #{tx_id}")
     else:
         await _reply(update, "Not found (or not yours).")
@@ -251,7 +254,7 @@ async def edit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await _reply(update, "Sorry, I couldn't parse that message.")
         return
 
-    if not update_transaction(parsed, user_id=uid, tx_id=tx_id, db_path=_db_path(context)):
+    if not await update_transaction(parsed, user_id=uid, tx_id=tx_id, pool=_db_pool(context)):
         await _reply(update, "Not found (or not yours).")
         return
 
@@ -294,7 +297,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     try:
-        tx_id = insert_transaction(parsed, user_id=uid, db_path=_db_path(context))
+        tx_id = await insert_transaction(
+            parsed,
+            user_id=uid,
+            pool=_db_pool(context),
+            telegram_update_id=update.update_id if update.update_id is not None else None,
+        )
     except Exception:
         logger.exception("insert_transaction failed")
         await _reply(update, "Sorry, I couldn't save that right now.")
@@ -331,10 +339,10 @@ async def _post_init(app: Application) -> None:
     except Exception:
         logger.exception("Failed to set bot commands")
 
-
-def build_app(settings: Settings) -> Application:
+def build_app(settings: Settings, *, db_pool: Any) -> Application:
     app = ApplicationBuilder().token(settings.token).post_init(_post_init).build()
     app.bot_data["settings"] = settings
+    app.bot_data["db_pool"] = db_pool
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))

@@ -4,35 +4,30 @@ Telegram bot for logging expenses/debts.
 Env vars:
 - TELEGRAM_BOT_TOKEN (or BOT_TOKEN): required
 - TELEGRAM_ALLOWED_USER_IDS: optional, comma-separated user ids
-- DB_PATH: optional sqlite path (default: ./data/expenses.db)
+- DATABASE_URL: required (Supabase Postgres connection string)
+- TELEGRAM_WEBHOOK_SECRET_TOKEN: optional (recommended)
 - LOG_LEVEL: optional (default: INFO)
 
 Run:
   python3 run.py
+  # with auto-reload:
+  UVICORN_RELOAD=1 python3 run.py
+  # or:
+  uvicorn api.index:app --reload
 """
 
 from __future__ import annotations
 
-import logging
+import os
 
-from bot import build_app
-from config import load_dotenv, load_settings
+import uvicorn
 
 
 def main() -> None:
-    load_dotenv()
-    settings = load_settings()
-
-    logging.basicConfig(
-        level=settings.log_level,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
-
-    app = build_app(settings)
-    logging.getLogger("expenses-bot").info("Bot started (polling).")
-    app.run_polling(drop_pending_updates=True)
+    port = int(os.environ.get("PORT", "8000"))
+    reload = (os.environ.get("UVICORN_RELOAD") or "").strip() in {"1", "true", "yes", "on"}
+    uvicorn.run("api.index:app", host="0.0.0.0", port=port, reload=reload)
 
 
 if __name__ == "__main__":
     main()
-

@@ -1,24 +1,44 @@
 # Telegram Expenses Bot
 
-Logs simple expenses/debts from chat messages (Persian-friendly) into SQLite and can return weekly/monthly summaries.
+Logs simple expenses/debts from chat messages (Persian-friendly) into Supabase Postgres and can return weekly/monthly summaries.
+
+Runs as a FastAPI app using Telegram webhooks (suitable for Vercel serverless).
 
 ## Setup
 
 1. Create a bot with `@BotFather` and copy the token.
-2. Install dependencies:
+2. Create a Supabase project and copy the Postgres connection string (`DATABASE_URL`).
+   - For Vercel/serverless, prefer the Supabase "Transaction pooler" connection string (port `6543`).
+3. Install dependencies:
    - `python3 -m venv .venv`
    - `source .venv/bin/activate`
    - `pip install -r requirements.txt`
-3. Create `.env` from the template and set:
+4. Create `.env` from the template and set:
    - `cp .env.example .env`
    - `TELEGRAM_BOT_TOKEN="123:abc..."`
+   - `DATABASE_URL="postgresql://..."`
    - Optional: `TELEGRAM_ALLOWED_USER_IDS="123456789"` (comma-separated)
-   - Optional: `DB_PATH="./data/expenses.db"`
+   - Optional (recommended): `TELEGRAM_WEBHOOK_SECRET_TOKEN="..."`
    - Optional: `LOG_LEVEL="INFO"`
    - Note: `.env` is in `.gitignore` (not committed)
 
-Run the bot:
-- `python3 run.py`
+Run locally:
+- `uvicorn api.index:app --reload`
+
+## Deploy (Vercel)
+
+- This repo includes `vercel.json` and exposes the FastAPI app from `api/index.py`.
+- After deploying, set the Telegram webhook to your Vercel URL:
+  - Webhook URL: `https://<your-domain>/telegram/webhook`
+  - If you set `TELEGRAM_WEBHOOK_SECRET_TOKEN`, also set the same `secret_token` on Telegram.
+
+Example (set webhook):
+
+```bash
+curl -X POST "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook" \
+  -d "url=https://<your-domain>/telegram/webhook" \
+  -d "secret_token=<TELEGRAM_WEBHOOK_SECRET_TOKEN>"
+```
 
 ## Usage
 
