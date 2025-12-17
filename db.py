@@ -37,6 +37,7 @@ async def init_db(pool: asyncpg.Pool) -> None:
                 CREATE TABLE IF NOT EXISTS transactions (
                     id BIGSERIAL PRIMARY KEY,
                     user_id BIGINT NOT NULL,
+                    user_tx_id BIGINT,
                     telegram_update_id BIGINT,
                     telegram_chat_id BIGINT,
                     telegram_message_id BIGINT,
@@ -50,6 +51,7 @@ async def init_db(pool: asyncpg.Pool) -> None:
                 """
             )
             # Migrations for older deployments
+            await conn.execute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS user_tx_id BIGINT;")
             await conn.execute(
                 "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS telegram_update_id BIGINT;"
             )
@@ -59,6 +61,45 @@ async def init_db(pool: asyncpg.Pool) -> None:
             await conn.execute(
                 "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS telegram_message_id BIGINT;"
             )
+
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_counters (
+                    user_id BIGINT PRIMARY KEY,
+                    next_tx_id BIGINT NOT NULL
+                );
+                """
+            )
+
+            # Backfill user-scoped ids for existing rows.
+            await conn.execute(
+                """
+                WITH ranked AS (
+                    SELECT
+                        id,
+                        row_number() OVER (PARTITION BY user_id ORDER BY created_at ASC, id ASC) AS rn
+                    FROM transactions
+                    WHERE user_tx_id IS NULL
+                )
+                UPDATE transactions t
+                SET user_tx_id = ranked.rn
+                FROM ranked
+                WHERE t.id = ranked.id;
+                """
+            )
+
+            # Ensure counters are initialized/up-to-date.
+            await conn.execute(
+                """
+                INSERT INTO user_counters (user_id, next_tx_id)
+                SELECT user_id, COALESCE(MAX(user_tx_id), 0) + 1
+                FROM transactions
+                GROUP BY user_id
+                ON CONFLICT (user_id) DO UPDATE
+                SET next_tx_id = GREATEST(user_counters.next_tx_id, EXCLUDED.next_tx_id);
+                """
+            )
+
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_tx_user_time ON transactions(user_id, created_at DESC);"
             )
@@ -78,6 +119,13 @@ async def init_db(pool: asyncpg.Pool) -> None:
                 CREATE UNIQUE INDEX IF NOT EXISTS ux_tx_telegram_chat_message
                 ON transactions(telegram_chat_id, telegram_message_id)
                 WHERE telegram_chat_id IS NOT NULL AND telegram_message_id IS NOT NULL;
+                """
+            )
+            await conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_tx_user_user_tx_id
+                ON transactions(user_id, user_tx_id)
+                WHERE user_tx_id IS NOT NULL;
                 """
             )
         _SCHEMA_READY = True
@@ -108,51 +156,73 @@ async def insert_transaction(
     now = now.astimezone(timezone.utc)
 
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            INSERT INTO transactions
-                (
-                    user_id,
-                    telegram_update_id,
-                    telegram_chat_id,
-                    telegram_message_id,
+        try:
+            async with conn.transaction():
+                allocated = await conn.fetchval(
+                    """
+                    WITH upsert AS (
+                        INSERT INTO user_counters (user_id, next_tx_id)
+                        VALUES ($1, 2)
+                        ON CONFLICT (user_id) DO UPDATE
+                        SET next_tx_id = user_counters.next_tx_id + 1
+                        RETURNING next_tx_id
+                    )
+                    SELECT (next_tx_id - 1) FROM upsert;
+                    """,
+                    int(user_id),
+                )
+                user_tx_id = int(allocated)
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO transactions
+                        (
+                            user_id,
+                            user_tx_id,
+                            telegram_update_id,
+                            telegram_chat_id,
+                            telegram_message_id,
+                            amount,
+                            direction,
+                            person,
+                            description,
+                            raw,
+                            created_at
+                        )
+                    VALUES
+                        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                    ON CONFLICT DO NOTHING
+                    RETURNING user_tx_id
+                    """,
+                    int(user_id),
+                    user_tx_id,
+                    int(telegram_update_id) if telegram_update_id is not None else None,
+                    int(telegram_chat_id) if telegram_chat_id is not None else None,
+                    int(telegram_message_id) if telegram_message_id is not None else None,
                     amount,
                     direction,
                     person,
                     description,
                     raw,
-                    created_at
+                    now,
                 )
-            VALUES
-                ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            ON CONFLICT DO NOTHING
-            RETURNING id
-            """,
-            int(user_id),
-            int(telegram_update_id) if telegram_update_id is not None else None,
-            int(telegram_chat_id) if telegram_chat_id is not None else None,
-            int(telegram_message_id) if telegram_message_id is not None else None,
-            amount,
-            direction,
-            person,
-            description,
-            raw,
-            now,
-        )
-        if row:
-            return int(row["id"])
+                if row:
+                    return int(row["user_tx_id"])
+                raise RuntimeError("duplicate")
+        except RuntimeError as e:
+            if str(e) != "duplicate":
+                raise
 
         existing = None
         if telegram_update_id is not None:
             existing = await conn.fetchrow(
-                "SELECT id FROM transactions WHERE telegram_update_id = $1 AND user_id = $2",
+                "SELECT user_tx_id FROM transactions WHERE telegram_update_id = $1 AND user_id = $2",
                 int(telegram_update_id),
                 int(user_id),
             )
         if existing is None and telegram_chat_id is not None and telegram_message_id is not None:
             existing = await conn.fetchrow(
                 """
-                SELECT id
+                SELECT user_tx_id
                 FROM transactions
                 WHERE telegram_chat_id = $1 AND telegram_message_id = $2 AND user_id = $3
                 """,
@@ -162,7 +232,7 @@ async def insert_transaction(
             )
         if not existing:
             raise RuntimeError("Insert conflict but existing row not found")
-        return int(existing["id"])
+        return int(existing["user_tx_id"])
 
 
 async def list_transactions(
@@ -183,12 +253,12 @@ async def list_transactions(
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT id, amount, direction, person, description, raw, created_at
+            SELECT user_tx_id AS id, amount, direction, person, description, raw, created_at
             FROM transactions
             WHERE user_id = $1
               AND created_at >= $2
               AND created_at < $3
-            ORDER BY created_at DESC
+            ORDER BY created_at DESC, user_tx_id DESC
             """,
             int(user_id),
             start_utc,
@@ -226,10 +296,10 @@ async def get_recent_transactions(
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT id, amount, direction, person, description, raw, created_at
+            SELECT user_tx_id AS id, amount, direction, person, description, raw, created_at
             FROM transactions
             WHERE user_id = $1
-            ORDER BY created_at DESC, id DESC
+            ORDER BY created_at DESC, user_tx_id DESC
             LIMIT $2
             """,
             int(user_id),
@@ -264,7 +334,7 @@ async def delete_transaction(
     await init_db(pool)
     async with pool.acquire() as conn:
         status = await conn.execute(
-            "DELETE FROM transactions WHERE id = $1 AND user_id = $2",
+            "DELETE FROM transactions WHERE user_tx_id = $1 AND user_id = $2",
             int(tx_id),
             int(user_id),
         )
@@ -297,7 +367,7 @@ async def update_transaction(
             """
             UPDATE transactions
             SET amount = $1, direction = $2, person = $3, description = $4, raw = $5
-            WHERE id = $6 AND user_id = $7
+            WHERE user_tx_id = $6 AND user_id = $7
             """,
             amount,
             direction,

@@ -41,8 +41,8 @@ Commands:
 /hide - hide command buttons
 /last [n] - show recent records
 /undo - delete last record
-/delete <id> - delete by id
-/edit <id> <new text> - edit by id
+/delete <id> - delete by id (your own ids)
+/edit <id> <new text> - edit by id (your own ids)
 /week - weekly summary
 /month - monthly summary
 """
@@ -173,7 +173,7 @@ async def last(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await _reply(update, "No records yet.")
         return
 
-    lines = ["Recent records:"]
+    lines = ["Recent records (your ids):"]
     for row in rows:
         person = row.get("person") or "-"
         desc = row.get("description") or "-"
