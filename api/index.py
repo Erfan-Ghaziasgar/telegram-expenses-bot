@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import ssl
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, unquote
-import ssl
 
 import asyncpg
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -139,7 +140,13 @@ async def lifespan(app: FastAPI):
         "user": db_kwargs.get("user"),
     }
     logger.info("Connecting to Postgres (%s)", safe_db)
-    db_pool = await asyncpg.create_pool(min_size=1, max_size=5, timeout=20, **db_kwargs)
+    db_pool = await asyncpg.create_pool(
+        min_size=settings.db_pool_min_size,
+        max_size=settings.db_pool_max_size,
+        timeout=settings.db_pool_timeout,
+        max_inactive_connection_lifetime=settings.db_pool_max_inactive_connection_lifetime,
+        **db_kwargs,
+    )
     await init_db(db_pool)
     logger.info("Postgres ready")
 
@@ -193,5 +200,16 @@ async def telegram_webhook(
         raise HTTPException(status_code=400, detail="Invalid JSON") from e
 
     update = Update.de_json(payload, telegram_app.bot)
-    await telegram_app.process_update(update)
+
+    async def _process_update_safe() -> None:
+        try:
+            await telegram_app.process_update(update)
+        except Exception:
+            logger.exception("Failed to process Telegram update")
+
+    if settings.webhook_process_in_background:
+        asyncio.create_task(_process_update_safe())
+        return {"ok": True}
+
+    await _process_update_safe()
     return {"ok": True}

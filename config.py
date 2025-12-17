@@ -60,6 +60,35 @@ class Settings:
     database_url: str
     webhook_secret_token: str | None
     log_level: str
+    db_pool_min_size: int
+    db_pool_max_size: int
+    db_pool_timeout: float
+    db_pool_max_inactive_connection_lifetime: float
+    webhook_process_in_background: bool
+
+
+def _parse_bool(raw: str | None) -> bool:
+    return (raw or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _parse_int(raw: str | None, *, default: int, min_value: int | None = None) -> int:
+    try:
+        value = int((raw or "").strip())
+    except Exception:
+        value = int(default)
+    if min_value is not None:
+        value = max(min_value, value)
+    return value
+
+
+def _parse_float(raw: str | None, *, default: float, min_value: float | None = None) -> float:
+    try:
+        value = float((raw or "").strip())
+    except Exception:
+        value = float(default)
+    if min_value is not None:
+        value = max(min_value, value)
+    return value
 
 
 def load_settings() -> Settings:
@@ -93,10 +122,28 @@ def load_settings() -> Settings:
         )
     webhook_secret_token = (os.environ.get("TELEGRAM_WEBHOOK_SECRET_TOKEN") or "").strip() or None
     log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+
+    db_pool_min_size = _parse_int(os.environ.get("DB_POOL_MIN_SIZE"), default=1, min_value=1)
+    db_pool_max_size = _parse_int(os.environ.get("DB_POOL_MAX_SIZE"), default=5, min_value=1)
+    if db_pool_max_size < db_pool_min_size:
+        db_pool_max_size = db_pool_min_size
+    db_pool_timeout = _parse_float(os.environ.get("DB_POOL_TIMEOUT"), default=20.0, min_value=1.0)
+    db_pool_max_inactive_connection_lifetime = _parse_float(
+        os.environ.get("DB_POOL_MAX_INACTIVE_SECS"),
+        default=60.0,
+        min_value=0.0,
+    )
+    webhook_process_in_background = _parse_bool(os.environ.get("TELEGRAM_WEBHOOK_BACKGROUND"))
+
     return Settings(
         token=token,
         allowed_user_ids=allowed_user_ids,
         database_url=database_url,
         webhook_secret_token=webhook_secret_token,
         log_level=log_level,
+        db_pool_min_size=db_pool_min_size,
+        db_pool_max_size=db_pool_max_size,
+        db_pool_timeout=db_pool_timeout,
+        db_pool_max_inactive_connection_lifetime=db_pool_max_inactive_connection_lifetime,
+        webhook_process_in_background=webhook_process_in_background,
     )
