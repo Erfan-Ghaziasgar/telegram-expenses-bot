@@ -20,6 +20,3 @@ data/
 # OS / editor
 .DS_Store
 .vscode/
-
-# Local tunnel binaries
-cloudflared

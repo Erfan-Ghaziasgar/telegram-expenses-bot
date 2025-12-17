@@ -296,7 +296,7 @@ async def get_recent_transactions(
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT user_tx_id AS id, amount, direction, person, description, raw, created_at
+            SELECT user_tx_id AS id, amount, direction, person, description, created_at
             FROM transactions
             WHERE user_id = $1
             ORDER BY created_at DESC, user_tx_id DESC
@@ -315,11 +315,44 @@ async def get_recent_transactions(
                 "direction": r["direction"],
                 "person": r["person"],
                 "description": r["description"],
-                "raw": r["raw"],
                 "created_at": created_at.isoformat() if created_at else None,
             }
         )
     return out
+
+
+async def get_transaction(
+    *,
+    user_id: int,
+    tx_id: int,
+    pool: asyncpg.Pool,
+) -> Dict[str, Any] | None:
+    """
+    Return one transaction (scoped to user).
+    """
+    await init_db(pool)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT user_tx_id AS id, amount, direction, person, description, raw, created_at
+            FROM transactions
+            WHERE user_id = $1 AND user_tx_id = $2
+            """,
+            int(user_id),
+            int(tx_id),
+        )
+    if not row:
+        return None
+    created_at = row["created_at"]
+    return {
+        "id": int(row["id"]),
+        "amount": int(row["amount"]),
+        "direction": row["direction"],
+        "person": row["person"],
+        "description": row["description"],
+        "raw": row["raw"],
+        "created_at": created_at.isoformat() if created_at else None,
+    }
 
 
 async def delete_transaction(
@@ -507,21 +540,81 @@ def format_summary_text(summary: Summary) -> str:
     """
     Helpful for bot replies (plain text).
     """
+    return format_summary_text_pretty(summary)
+
+
+def _fmt_int(value: int) -> str:
+    return f"{value:,}"
+
+
+def _parse_iso_utc(value: str) -> datetime:
+    dt = datetime.fromisoformat(value)
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _fmt_period(summary: Summary) -> str:
+    start_dt = _parse_iso_utc(summary.start)
+    end_dt = _parse_iso_utc(summary.end)
+    start_s = start_dt.date().isoformat()
+    end_s = end_dt.date().isoformat()
+    if start_s == end_s:
+        return f"{start_s} (UTC)"
+    return f"{start_s} → {end_s} (UTC)"
+
+
+def format_summary_text_pretty(
+    summary: Summary,
+    *,
+    title: str | None = None,
+    max_people: int = 10,
+    max_days: int = 7,
+) -> str:
     d = summary.totals_by_direction
-    lines = []
-    lines.append(f"Records: {summary.count}")
-    lines.append(f"Expense: {d.get('expense',0)}")
-    lines.append(f"You owe (payable): {d.get('payable',0)}")
-    lines.append(f"Others owe you (receivable): {d.get('receivable',0)}")
+    expense = int(d.get("expense", 0) or 0)
+    payable = int(d.get("payable", 0) or 0)
+    receivable = int(d.get("receivable", 0) or 0)
+    net = receivable - payable
+
+    lines: list[str] = []
+    header = title.strip() if title else "Summary"
+    lines.append(f"{header} — {_fmt_period(summary)}")
+
+    if summary.count <= 0:
+        lines.append("No records in this period.")
+        return "\n".join(lines)
+
+    lines.append(f"Records: {_fmt_int(summary.count)}")
+    lines.append("")
+    lines.append("Totals")
+    lines.append(f"- Expense: {_fmt_int(expense)}")
+    lines.append(f"- You owe: {_fmt_int(payable)}")
+    lines.append(f"- Owed to you: {_fmt_int(receivable)}")
+    lines.append(f"- Net: {_fmt_int(net)}")
 
     if summary.totals_by_person:
-        lines.append("\nBy person:")
-        for k, v in list(summary.totals_by_person.items())[:10]:
-            lines.append(f"- {k}: {v}")
+        items = list(summary.totals_by_person.items())
+        lines.append("")
+        lines.append("Top people (all types)")
+        shown = items[:max_people]
+        for i, (person, total) in enumerate(shown, start=1):
+            lines.append(f"{i}. {person}: {_fmt_int(int(total))}")
+        remaining = len(items) - len(shown)
+        if remaining > 0:
+            lines.append(f"... and {remaining} more")
 
     if summary.daily_totals:
-        lines.append("\nDaily totals:")
-        for day, total in summary.daily_totals[-7:]:
-            lines.append(f"- {day}: {total}")
+        end_date = _parse_iso_utc(summary.end).date()
+        start_date = _parse_iso_utc(summary.start).date()
+        totals_by_day = {day: int(total) for day, total in summary.daily_totals}
+        earliest = max(start_date, end_date - timedelta(days=max_days - 1))
+        span_days = (end_date - earliest).days + 1
+        days = [(earliest + timedelta(days=i)).isoformat() for i in range(span_days)]
+
+        lines.append("")
+        lines.append(f"Last {len(days)} days (all types)")
+        for day in days:
+            lines.append(f"- {day}: {_fmt_int(totals_by_day.get(day, 0))}")
 
     return "\n".join(lines)
