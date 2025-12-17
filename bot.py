@@ -302,6 +302,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             user_id=uid,
             pool=_db_pool(context),
             telegram_update_id=update.update_id if update.update_id is not None else None,
+            telegram_chat_id=update.effective_chat.id if update.effective_chat else None,
+            telegram_message_id=update.message.message_id if update.message else None,
         )
     except Exception:
         logger.exception("insert_transaction failed")

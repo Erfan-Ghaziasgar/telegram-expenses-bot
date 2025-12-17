@@ -37,7 +37,9 @@ async def init_db(pool: asyncpg.Pool) -> None:
                 CREATE TABLE IF NOT EXISTS transactions (
                     id BIGSERIAL PRIMARY KEY,
                     user_id BIGINT NOT NULL,
-                    telegram_update_id BIGINT UNIQUE,
+                    telegram_update_id BIGINT,
+                    telegram_chat_id BIGINT,
+                    telegram_message_id BIGINT,
                     amount INTEGER NOT NULL CHECK (amount >= 0),
                     direction TEXT NOT NULL CHECK (direction IN ('expense','payable','receivable')),
                     person TEXT,
@@ -47,11 +49,36 @@ async def init_db(pool: asyncpg.Pool) -> None:
                 );
                 """
             )
+            # Migrations for older deployments
+            await conn.execute(
+                "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS telegram_update_id BIGINT;"
+            )
+            await conn.execute(
+                "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS telegram_chat_id BIGINT;"
+            )
+            await conn.execute(
+                "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS telegram_message_id BIGINT;"
+            )
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_tx_user_time ON transactions(user_id, created_at DESC);"
             )
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_tx_user_person ON transactions(user_id, person);"
+            )
+            # Idempotency: prevent duplicates if Telegram retries the same update/message.
+            await conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_tx_telegram_update_id
+                ON transactions(telegram_update_id)
+                WHERE telegram_update_id IS NOT NULL;
+                """
+            )
+            await conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_tx_telegram_chat_message
+                ON transactions(telegram_chat_id, telegram_message_id)
+                WHERE telegram_chat_id IS NOT NULL AND telegram_message_id IS NOT NULL;
+                """
             )
         _SCHEMA_READY = True
 
@@ -63,6 +90,8 @@ async def insert_transaction(
     pool: asyncpg.Pool,
     created_at: Optional[datetime] = None,
     telegram_update_id: int | None = None,
+    telegram_chat_id: int | None = None,
+    telegram_message_id: int | None = None,
 ) -> int:
     """
     Insert one transaction. Returns inserted row id.
@@ -82,14 +111,27 @@ async def insert_transaction(
         row = await conn.fetchrow(
             """
             INSERT INTO transactions
-                (user_id, telegram_update_id, amount, direction, person, description, raw, created_at)
+                (
+                    user_id,
+                    telegram_update_id,
+                    telegram_chat_id,
+                    telegram_message_id,
+                    amount,
+                    direction,
+                    person,
+                    description,
+                    raw,
+                    created_at
+                )
             VALUES
-                ($1, $2, $3, $4, $5, $6, $7, $8)
-            ON CONFLICT (telegram_update_id) DO NOTHING
+                ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT DO NOTHING
             RETURNING id
             """,
             int(user_id),
             int(telegram_update_id) if telegram_update_id is not None else None,
+            int(telegram_chat_id) if telegram_chat_id is not None else None,
+            int(telegram_message_id) if telegram_message_id is not None else None,
             amount,
             direction,
             person,
@@ -99,13 +141,25 @@ async def insert_transaction(
         )
         if row:
             return int(row["id"])
-        if telegram_update_id is None:
-            raise RuntimeError("Insert failed unexpectedly")
-        existing = await conn.fetchrow(
-            "SELECT id FROM transactions WHERE telegram_update_id = $1 AND user_id = $2",
-            int(telegram_update_id),
-            int(user_id),
-        )
+
+        existing = None
+        if telegram_update_id is not None:
+            existing = await conn.fetchrow(
+                "SELECT id FROM transactions WHERE telegram_update_id = $1 AND user_id = $2",
+                int(telegram_update_id),
+                int(user_id),
+            )
+        if existing is None and telegram_chat_id is not None and telegram_message_id is not None:
+            existing = await conn.fetchrow(
+                """
+                SELECT id
+                FROM transactions
+                WHERE telegram_chat_id = $1 AND telegram_message_id = $2 AND user_id = $3
+                """,
+                int(telegram_chat_id),
+                int(telegram_message_id),
+                int(user_id),
+            )
         if not existing:
             raise RuntimeError("Insert conflict but existing row not found")
         return int(existing["id"])
