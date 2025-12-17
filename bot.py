@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Final
 
 from telegram import BotCommand, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
@@ -27,6 +28,7 @@ from parser import parse_message
 
 logger = logging.getLogger("expenses-bot")
 
+_GREETING_RE = re.compile(r"^\s*(سلام|salam|hi|hello|hey)\b", re.IGNORECASE)
 
 HELP_TEXT: Final[str] = """\
 Send a message like:
@@ -289,7 +291,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     try:
         parsed = parse_message(update.message.text.strip())
     except ValueError:
-        await _reply(update, "I couldn't find an amount. Try:\n" + HELP_TEXT)
+        text = update.message.text.strip()
+        if _GREETING_RE.search(text):
+            await _reply(
+                update,
+                "سلام!\n"
+                "یک پیام با مبلغ بفرست (مثلاً: 100 تومن پول نون) یا /help رو بزن.",
+            )
+        else:
+            await _reply(update, "I couldn't find an amount. Send `/help` for examples.")
         return
     except Exception:
         logger.exception("parse_message failed")
