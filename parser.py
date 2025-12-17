@@ -69,10 +69,33 @@ def normalize_digits(text: str) -> str:
     return text.translate(FA_TO_EN_DIGITS).translate(AR_TO_EN_DIGITS)
 
 def extract_amount(text: str) -> Optional[int]:
-    m = AMOUNT_RE.search(text)
-    if not m:
+    """
+    Extract the intended amount from text.
+
+    We intentionally skip common "list index" prefixes like:
+      - "2. ..." / "۲. ..." / "2٫ ..." / "2.edit ..."
+    so users don't accidentally save the index number instead of the real amount.
+    """
+    matches = list(AMOUNT_RE.finditer(text))
+    if not matches:
         return None
-    return int(m.group(1))
+
+    for m in matches:
+        start = m.start()
+        end = m.end()
+        prefix = text[:start].strip()
+        if prefix:
+            return int(m.group(1))
+
+        if end < len(text):
+            next_ch = text[end]
+            next_next = text[end + 1] if end + 1 < len(text) else ""
+            if next_ch in {".", "٫"} and (next_next.isspace() or next_next.isalpha()):
+                continue
+
+        return int(m.group(1))
+
+    return int(matches[0].group(1))
 
 def detect_direction(text: str) -> str:
     # Check receivable first (more specific)
@@ -116,6 +139,8 @@ def clean_description(text: str, amount: int) -> str:
     t = text
     t = re.sub(rf"(?<!\d){amount}(?!\d)", "", t, count=1).strip()
     t = re.sub(r"\b(تومن|تومان|ریال)\b", "", t).strip()
+    # drop common list-index prefixes like "2. ..." / "۲. ..."
+    t = re.sub(r"^\s*\d+\s*[.٫]\s*", "", t).strip()
     return re.sub(r"\s{2,}", " ", t)
 
 def parse_message(raw_text: str) -> Dict[str, Any]:

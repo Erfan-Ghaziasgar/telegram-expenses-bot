@@ -40,6 +40,10 @@ from parser import parse_message
 logger = logging.getLogger("expenses-bot")
 
 _GREETING_RE = re.compile(r"^\s*(سلام|salam|hi|hello|hey)\b", re.IGNORECASE)
+_PROBABLY_COMMAND_RE = re.compile(
+    r"^\s*(?:[.٫،٬]+|\d+\s*[.٫])\s*(edit|delete|last|week|month|help|menu|hide|undo|id)\b",
+    re.IGNORECASE,
+)
 
 _DIRECTION_LABELS: Final[dict[str, str]] = {
     "expense": "Expense",
@@ -349,11 +353,20 @@ async def edit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         parsed = parse_message(new_text)
     except ValueError:
-        await _reply(update, "I couldn't find an amount in the new text.")
+        await _reply(
+            update,
+            "\n".join(
+                [
+                    "مبلغ پیدا نکردم. اینطوری بفرست:",
+                    "- /edit 12 700 پول چلو",
+                    "- /edit 12 ۲۲۰ به ممد",
+                ]
+            ),
+        )
         return
     except Exception:
         logger.exception("parse_message failed")
-        await _reply(update, "Sorry, I couldn't parse that message.")
+        await _reply(update, "Sorry, I couldn't parse that. Send `/help` for examples.")
         return
 
     if not await update_transaction(parsed, user_id=uid, tx_id=tx_id, pool=_db_pool(context)):
@@ -388,19 +401,42 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if uid is None:
         return
 
+    raw_text = update.message.text.strip()
+    if _PROBABLY_COMMAND_RE.search(raw_text):
+        await _reply(
+            update,
+            "\n".join(
+                [
+                    "It looks like you tried to use a command.",
+                    "Use `/menu` or one of these:",
+                    "- `/last` (then tap Edit/Delete buttons)",
+                    "- `/edit <id> <new text>`",
+                    "- `/delete <id>`",
+                ]
+            ),
+        )
+        return
+
     pending_edit_tx_id = context.user_data.get("pending_edit_tx_id")
     if pending_edit_tx_id is not None:
         try:
-            parsed = parse_message(update.message.text.strip())
+            parsed = parse_message(raw_text)
         except ValueError:
             await _reply(
                 update,
-                "I couldn't find an amount. Reply with a full message like `700 پول چلو`, or /cancel.",
+                "\n".join(
+                    [
+                        "مبلغ پیدا نکردم. یک پیام کامل مثل نمونه‌های زیر بفرست یا /cancel کن:",
+                        "- 700 پول چلو",
+                        "- ۲۲۰ به ممد",
+                        "- ۱۵۰ تومن ممد باید بهم بده",
+                    ]
+                ),
             )
             return
         except Exception:
             logger.exception("parse_message failed")
-            await _reply(update, "Sorry, I couldn't parse that. Try again or /cancel.")
+            await _reply(update, "Sorry, I couldn't parse that. Try again, or /cancel.")
             return
 
         ok = await update_transaction(
@@ -434,21 +470,33 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     try:
-        parsed = parse_message(update.message.text.strip())
+        parsed = parse_message(raw_text)
     except ValueError:
-        text = update.message.text.strip()
-        if _GREETING_RE.search(text):
+        if _GREETING_RE.search(raw_text):
             await _reply(
                 update,
                 "سلام!\n"
                 "یک پیام با مبلغ بفرست (مثلاً: 100 تومن پول نون) یا /help رو بزن.",
             )
         else:
-            await _reply(update, "I couldn't find an amount. Send `/help` for examples.")
+            await _reply(
+                update,
+                "\n".join(
+                    [
+                        "متوجه نشدم یا مبلغ پیدا نکردم.",
+                        "مثال‌ها:",
+                        "- 100 تومن پول نون",
+                        "- ۲۲۰ به ممد",
+                        "- 220 تومن به ممد باید بدم",
+                        "- ۱۵۰ تومن ممد باید بهم بده",
+                        "راهنما: /help  |  منو: /menu",
+                    ]
+                ),
+            )
         return
     except Exception:
         logger.exception("parse_message failed")
-        await _reply(update, "Sorry, I couldn't parse that message.")
+        await _reply(update, "Sorry, I couldn't parse that. Send `/help` for examples.")
         return
 
     try:
