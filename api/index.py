@@ -15,10 +15,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from bot import build_app
-from config import load_dotenv, load_settings
-from db_url import asyncpg_pool_kwargs
-from db import init_db
+from expenses_bot import build_app
+from expenses_bot.config import load_dotenv, load_settings
+from expenses_bot.db_url import asyncpg_pool_kwargs
+from expenses_bot.db import init_db
 
 logger = logging.getLogger("expenses-bot")
 

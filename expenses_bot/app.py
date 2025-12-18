@@ -13,7 +13,7 @@ from telegram.ext import (
     filters,
 )
 
-from config import Settings
+from .config import Settings
 
 from .handlers import (
     add_buttons,
@@ -70,4 +70,3 @@ def build_app(settings: Settings, *, db_pool: Any) -> Application:
 
     app.add_error_handler(error_handler)
     return app
-

@@ -95,4 +95,3 @@ def asyncpg_pool_kwargs(database_url: str) -> dict[str, Any]:
         kwargs["statement_cache_size"] = 0
         kwargs["max_cached_statement_lifetime"] = 0
     return kwargs
-

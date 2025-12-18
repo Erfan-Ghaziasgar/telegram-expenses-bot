@@ -7,8 +7,8 @@ from typing import Any
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from config import Settings
-from db import (
+from .config import Settings
+from .db import (
     delete_transaction,
     format_summary_text_pretty,
     get_month_summary,

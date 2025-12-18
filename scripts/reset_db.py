@@ -11,9 +11,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from db_url import asyncpg_pool_kwargs
-from config import load_dotenv, load_settings
-from db import wipe_all_data
+from expenses_bot.config import load_dotenv, load_settings
+from expenses_bot.db import wipe_all_data
+from expenses_bot.db_url import asyncpg_pool_kwargs
 
 async def _reset_db() -> None:
     load_dotenv(".env")
