@@ -6,9 +6,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import asyncpg
+import json
 
 _SCHEMA_LOCK = asyncio.Lock()
 _SCHEMA_READY = False
+_FLOW_TTL_SECONDS = 60 * 60 * 24  # 24 hours
 
 
 @dataclass
@@ -67,6 +69,17 @@ async def init_db(pool: asyncpg.Pool) -> None:
                 CREATE TABLE IF NOT EXISTS user_counters (
                     user_id BIGINT PRIMARY KEY,
                     next_tx_id BIGINT NOT NULL
+                );
+                """
+            )
+
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_flows (
+                    user_id BIGINT PRIMARY KEY,
+                    chat_id BIGINT,
+                    flow JSONB NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL
                 );
                 """
             )
@@ -139,7 +152,74 @@ async def wipe_all_data(*, pool: asyncpg.Pool) -> None:
     """
     await init_db(pool)
     async with pool.acquire() as conn:
-        await conn.execute("TRUNCATE TABLE transactions, user_counters RESTART IDENTITY;")
+        await conn.execute("TRUNCATE TABLE transactions, user_counters, user_flows RESTART IDENTITY;")
+
+
+async def get_user_flow(
+    *,
+    user_id: int,
+    chat_id: int | None,
+    pool: asyncpg.Pool,
+) -> dict[str, Any] | None:
+    await init_db(pool)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT flow, chat_id, updated_at FROM user_flows WHERE user_id = $1",
+            int(user_id),
+        )
+    if not row:
+        return None
+
+    saved_chat_id = row["chat_id"]
+    if chat_id is not None and saved_chat_id is not None and int(saved_chat_id) != int(chat_id):
+        await clear_user_flow(user_id=user_id, pool=pool)
+        return None
+
+    updated_at = row["updated_at"]
+    if isinstance(updated_at, datetime):
+        age = datetime.now(timezone.utc) - updated_at.astimezone(timezone.utc)
+        if age.total_seconds() > _FLOW_TTL_SECONDS:
+            await clear_user_flow(user_id=user_id, pool=pool)
+            return None
+
+    flow = row["flow"]
+    if isinstance(flow, str):
+        try:
+            flow = json.loads(flow)
+        except Exception:
+            await clear_user_flow(user_id=user_id, pool=pool)
+            return None
+    return flow if isinstance(flow, dict) else None
+
+
+async def set_user_flow(
+    flow: dict[str, Any],
+    *,
+    user_id: int,
+    chat_id: int | None,
+    pool: asyncpg.Pool,
+) -> None:
+    await init_db(pool)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO user_flows (user_id, chat_id, flow, updated_at)
+            VALUES ($1, $2, $3::jsonb, NOW())
+            ON CONFLICT (user_id) DO UPDATE
+            SET chat_id = EXCLUDED.chat_id,
+                flow = EXCLUDED.flow,
+                updated_at = EXCLUDED.updated_at
+            """,
+            int(user_id),
+            int(chat_id) if chat_id is not None else None,
+            json.dumps(flow, ensure_ascii=False),
+        )
+
+
+async def clear_user_flow(*, user_id: int, pool: asyncpg.Pool) -> None:
+    await init_db(pool)
+    async with pool.acquire() as conn:
+        await conn.execute("DELETE FROM user_flows WHERE user_id = $1", int(user_id))
 
 
 async def insert_transaction(

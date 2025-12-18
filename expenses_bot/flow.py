@@ -10,11 +10,15 @@ from .ui import fmt_amount, fmt_direction
 FLOW_KEY = "tx_flow"
 ADD_CALLBACK_PREFIX = "add:"
 
+FA_TO_EN_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789")
+AR_TO_EN_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+
 AMOUNT_ONLY_RE = re.compile(r"^\s*([0-9][0-9,\s_.]{0,24})\s*$")
 
 
 def parse_amount_only(text: str) -> int:
-    m = AMOUNT_ONLY_RE.match((text or "").strip())
+    norm = (text or "").translate(FA_TO_EN_DIGITS).translate(AR_TO_EN_DIGITS).strip()
+    m = AMOUNT_ONLY_RE.match(norm)
     if not m:
         raise ValueError("Invalid amount format")
     digits = re.sub(r"[,\s_.]", "", m.group(1))
@@ -85,35 +89,6 @@ def description_keyboard(*, has_existing: bool) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([row, [InlineKeyboardButton("Cancel", callback_data=f"{ADD_CALLBACK_PREFIX}cancel")]])
 
 
-def confirm_keyboard(direction: str, *, mode: str = "add") -> InlineKeyboardMarkup:
-    save_label = "Update" if mode == "edit" else "Save"
-    buttons: list[list[InlineKeyboardButton]] = [
-        [InlineKeyboardButton(save_label, callback_data=f"{ADD_CALLBACK_PREFIX}confirm:save")],
-        [
-            InlineKeyboardButton("Change type", callback_data=f"{ADD_CALLBACK_PREFIX}confirm:edit:type"),
-            InlineKeyboardButton(
-                "Change amount", callback_data=f"{ADD_CALLBACK_PREFIX}confirm:edit:amount"
-            ),
-        ],
-        [
-            InlineKeyboardButton(
-                "Change description", callback_data=f"{ADD_CALLBACK_PREFIX}confirm:edit:description"
-            ),
-            InlineKeyboardButton("Cancel", callback_data=f"{ADD_CALLBACK_PREFIX}cancel"),
-        ],
-    ]
-    if direction in {"payable", "receivable"}:
-        buttons.insert(
-            2,
-            [
-                InlineKeyboardButton(
-                    "Change counterparty", callback_data=f"{ADD_CALLBACK_PREFIX}confirm:edit:person"
-                )
-            ],
-        )
-    return InlineKeyboardMarkup(buttons)
-
-
 def clean_person_input(text: str) -> str | None:
     name = re.sub(r"\s{2,}", " ", (text or "").strip())
     if not name:
@@ -132,23 +107,6 @@ def clean_description_input(text: str) -> str:
     if len(desc) > 200:
         desc = desc[:200].rstrip()
     return desc
-
-
-def format_review(flow: dict[str, Any]) -> str:
-    direction = flow.get("direction") or "-"
-    person = (flow.get("person") or "-") if direction in {"payable", "receivable"} else "-"
-    amount = flow.get("amount")
-    description = (flow.get("description") or "-").strip() or "-"
-    amt = fmt_amount(int(amount)) if isinstance(amount, int) else "-"
-    return "\n".join(
-        [
-            "Review & confirm:",
-            f"Type: {fmt_direction(str(direction))}",
-            f"Counterparty: {person}",
-            f"Amount: {amt}",
-            f"Description: {description}",
-        ]
-    )
 
 
 def format_saved(flow: dict[str, Any], *, tx_id: int) -> str:
@@ -244,19 +202,13 @@ def step_prompt(flow: dict[str, Any]) -> tuple[str, InlineKeyboardMarkup]:
             "\n".join(
                 [
                     f"{_step_label(flow, 'description')}Description (optional).",
-                    "Send a short description (example: Pizza), or use the buttons.",
+                    "Send a short description (example: Pizza), or press Skip to save.",
                     f"Current: {existing_desc or '-'}",
                 ]
             ),
             description_keyboard(has_existing=bool(existing_desc)),
         )
 
-    # confirm (or any unexpected state)
-    if direction not in {"expense", "payable", "receivable"}:
-        flow["step"] = "choose_type"
-        return step_prompt(flow)
-    return (
-        format_review(flow),
-        confirm_keyboard(str(direction), mode=str(flow.get("mode") or "add")),
-    )
-
+    # unexpected state: reset to the beginning
+    flow["step"] = "choose_type"
+    return step_prompt(flow)
