@@ -199,10 +199,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = _user_id(update)
     if uid is None:
         return
-    flow = new_flow(mode="add")
-    await _save_flow(update, context, user_id=uid, flow=flow)
-    text, markup = step_prompt(flow)
-    await _reply(update, text, reply_markup=markup)
+    await _clear_flow_db(context, user_id=uid)
+    await _reply(update, HELP_TEXT, reply_markup=COMMAND_KEYBOARD)
 
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
