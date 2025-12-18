@@ -653,8 +653,10 @@ def _parse_iso_utc(value: str) -> datetime:
 def _fmt_period(summary: Summary) -> str:
     start_dt = _parse_iso_utc(summary.start)
     end_dt = _parse_iso_utc(summary.end)
-    start_s = start_dt.date().isoformat()
-    end_s = end_dt.date().isoformat()
+    from .dates import format_dual_date
+
+    start_s = format_dual_date(start_dt.date())
+    end_s = format_dual_date(end_dt.date())
     if start_s == end_s:
         return f"{start_s} (UTC)"
     return f"{start_s} → {end_s} (UTC)"
@@ -673,26 +675,35 @@ def format_summary_text_pretty(
     receivable = int(d.get("receivable", 0) or 0)
     net = receivable - payable
 
+    from .dates import format_dual_date
+    from .ui import SYMBOLS
+
     lines: list[str] = []
     header = title.strip() if title else "Summary"
-    lines.append(f"{header} — {_fmt_period(summary)}")
+    header_icon = SYMBOLS["totals"]
+    header_lc = header.lower()
+    if "week" in header_lc:
+        header_icon = SYMBOLS["week"]
+    elif "month" in header_lc:
+        header_icon = SYMBOLS["month"]
+    lines.append(f"{header_icon} {header} — {_fmt_period(summary)}")
 
     if summary.count <= 0:
-        lines.append("No records in this period.")
+        lines.append(f"{SYMBOLS['records']} No records in this period.")
         return "\n".join(lines)
 
-    lines.append(f"Records: {_fmt_int(summary.count)}")
+    lines.append(f"{SYMBOLS['records']} Records: {_fmt_int(summary.count)}")
     lines.append("")
-    lines.append("Totals")
-    lines.append(f"- Expense: {_fmt_int(expense)}")
-    lines.append(f"- You owe: {_fmt_int(payable)}")
-    lines.append(f"- Owed to you: {_fmt_int(receivable)}")
-    lines.append(f"- Net: {_fmt_int(net)}")
+    lines.append(f"{SYMBOLS['totals']} Totals")
+    lines.append(f"- {SYMBOLS['expense']} Expense: {_fmt_int(expense)}")
+    lines.append(f"- {SYMBOLS['payable']} You owe: {_fmt_int(payable)}")
+    lines.append(f"- {SYMBOLS['receivable']} Owed to you: {_fmt_int(receivable)}")
+    lines.append(f"- {SYMBOLS['net']} Net: {_fmt_int(net)}")
 
     if summary.totals_by_person:
         items = list(summary.totals_by_person.items())
         lines.append("")
-        lines.append("Top people (all types)")
+        lines.append("👥 Top counterparties (all types)")
         shown = items[:max_people]
         for i, (person, total) in enumerate(shown, start=1):
             lines.append(f"{i}. {person}: {_fmt_int(int(total))}")
@@ -709,8 +720,9 @@ def format_summary_text_pretty(
         days = [(earliest + timedelta(days=i)).isoformat() for i in range(span_days)]
 
         lines.append("")
-        lines.append(f"Last {len(days)} days (all types)")
+        lines.append(f"{SYMBOLS['trend']} Daily totals (last {len(days)} days)")
         for day in days:
-            lines.append(f"- {day}: {_fmt_int(totals_by_day.get(day, 0))}")
+            d = date.fromisoformat(day)
+            lines.append(f"- {format_dual_date(d)}: {_fmt_int(totals_by_day.get(day, 0))}")
 
     return "\n".join(lines)

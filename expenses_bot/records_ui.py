@@ -4,14 +4,14 @@ from typing import Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from .ui import fmt_amount, fmt_created_at, fmt_direction
+from .ui import SYMBOLS, fmt_amount, fmt_created_at, fmt_direction
 
 TX_CALLBACK_PREFIX = "tx:"
 
 
 def format_recent_records_text(rows: list[dict[str, Any]]) -> str:
     if not rows:
-        return "No records yet."
+        return f"{SYMBOLS['records']} No records yet."
 
     ids = [f"#{int(r.get('id', 0) or 0)}" for r in rows]
     amounts = [fmt_amount(int(r.get("amount", 0) or 0)) for r in rows]
@@ -22,9 +22,11 @@ def format_recent_records_text(rows: list[dict[str, Any]]) -> str:
     amt_w = max(1, max((len(s) for s in amounts), default=1))
     dir_w = max(4, max((len(s) for s in directions), default=4))
 
-    lines: list[str] = ["Recent records (your ids):"]
+    lines: list[str] = [f"{SYMBOLS['records']} Recent records (your ids):"]
     for r, tx_id, amount, direction, created_at in zip(rows, ids, amounts, directions, times):
-        lines.append(f"{tx_id.ljust(id_w)}  {amount.rjust(amt_w)}  {direction.ljust(dir_w)}  {created_at}")
+        lines.append(
+            f"{tx_id.ljust(id_w)}  {amount.rjust(amt_w)}  {direction.ljust(dir_w)}  {created_at}"
+        )
 
         person = (r.get("person") or "").strip()
         desc = (r.get("description") or "").strip()
@@ -47,9 +49,12 @@ def build_recent_records_keyboard(rows: list[dict[str, Any]], *, max_rows: int =
         tx_id = int(row["id"])
         buttons.append(
             [
-                InlineKeyboardButton("Edit", callback_data=f"{TX_CALLBACK_PREFIX}edit:{tx_id}"),
-                InlineKeyboardButton("Delete", callback_data=f"{TX_CALLBACK_PREFIX}del:{tx_id}"),
+                InlineKeyboardButton(
+                    f"{SYMBOLS['edit']} Edit", callback_data=f"{TX_CALLBACK_PREFIX}edit:{tx_id}"
+                ),
+                InlineKeyboardButton(
+                    f"{SYMBOLS['delete']} Delete", callback_data=f"{TX_CALLBACK_PREFIX}del:{tx_id}"
+                ),
             ]
         )
     return InlineKeyboardMarkup(buttons)
-

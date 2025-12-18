@@ -47,6 +47,8 @@ To add a new record, run `/add` and follow the guided steps:
 
 Privacy note: the bot is intended to be used in a private chat only (it will refuse to run in groups).
 
+Dates: summaries and timestamps show both Gregorian and Jalali (Shamsi) dates.
+
 Commands:
 - `/add` (start a new record - guided)
 - `/id` (show your Telegram user id)

@@ -35,7 +35,7 @@ from .flow import (
     type_keyboard,
 )
 from .records_ui import TX_CALLBACK_PREFIX, build_recent_records_keyboard, format_recent_records_text
-from .ui import COMMAND_KEYBOARD, HELP_TEXT
+from .ui import COMMAND_KEYBOARD, HELP_TEXT, SYMBOLS
 
 logger = logging.getLogger("expenses-bot")
 
@@ -265,7 +265,7 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     if not await _require_private_chat(update):
         return
-    await _reply(update, "Menu:", reply_markup=COMMAND_KEYBOARD)
+    await _reply(update, f"{SYMBOLS['menu']} Menu:", reply_markup=COMMAND_KEYBOARD)
 
 
 async def hide(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -419,10 +419,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 [
                     "It looks like you tried to use a command.",
                     "Use /menu or one of these:",
-                    "- /last (then tap Edit/Delete buttons)",
+                    f"- {SYMBOLS['records']} /last (then tap Edit/Delete buttons)",
                     "- /edit <id>",
                     "- /delete <id>",
-                    "- /add",
+                    f"- {SYMBOLS['new']} /add",
                 ]
             ),
         )

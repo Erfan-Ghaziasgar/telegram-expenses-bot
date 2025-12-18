@@ -5,7 +5,7 @@ from typing import Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from .ui import fmt_amount, fmt_direction
+from .ui import SYMBOLS, fmt_amount, fmt_direction
 
 FLOW_KEY = "tx_flow"
 ADD_CALLBACK_PREFIX = "add:"
@@ -55,38 +55,50 @@ def type_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("Expense", callback_data=f"{ADD_CALLBACK_PREFIX}type:expense"),
-                InlineKeyboardButton("Payable", callback_data=f"{ADD_CALLBACK_PREFIX}type:payable"),
                 InlineKeyboardButton(
-                    "Receivable", callback_data=f"{ADD_CALLBACK_PREFIX}type:receivable"
+                    f"{SYMBOLS['expense']} Expense", callback_data=f"{ADD_CALLBACK_PREFIX}type:expense"
+                ),
+                InlineKeyboardButton(
+                    f"{SYMBOLS['payable']} Payable", callback_data=f"{ADD_CALLBACK_PREFIX}type:payable"
+                ),
+                InlineKeyboardButton(
+                    f"{SYMBOLS['receivable']} Receivable",
+                    callback_data=f"{ADD_CALLBACK_PREFIX}type:receivable",
                 ),
             ],
-            [InlineKeyboardButton("Cancel", callback_data=f"{ADD_CALLBACK_PREFIX}cancel")],
+            [InlineKeyboardButton(f"{SYMBOLS['cancel']} Cancel", callback_data=f"{ADD_CALLBACK_PREFIX}cancel")],
         ]
     )
 
 
 def cancel_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[InlineKeyboardButton("Cancel", callback_data=f"{ADD_CALLBACK_PREFIX}cancel")]])
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(f"{SYMBOLS['cancel']} Cancel", callback_data=f"{ADD_CALLBACK_PREFIX}cancel")]]
+    )
 
 
 def ok_cancel_keyboard(ok_action: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("OK", callback_data=f"{ADD_CALLBACK_PREFIX}{ok_action}")],
-            [InlineKeyboardButton("Cancel", callback_data=f"{ADD_CALLBACK_PREFIX}cancel")],
+            [InlineKeyboardButton(f"{SYMBOLS['ok']} OK", callback_data=f"{ADD_CALLBACK_PREFIX}{ok_action}")],
+            [InlineKeyboardButton(f"{SYMBOLS['cancel']} Cancel", callback_data=f"{ADD_CALLBACK_PREFIX}cancel")],
         ]
     )
 
 
 def description_keyboard(*, has_existing: bool) -> InlineKeyboardMarkup:
     row: list[InlineKeyboardButton] = [
-        InlineKeyboardButton("Skip", callback_data=f"{ADD_CALLBACK_PREFIX}desc:skip")
+        InlineKeyboardButton("⏭️ Skip & save", callback_data=f"{ADD_CALLBACK_PREFIX}desc:skip")
     ]
     if has_existing:
-        row.insert(0, InlineKeyboardButton("Keep", callback_data=f"{ADD_CALLBACK_PREFIX}desc:keep"))
-        row.append(InlineKeyboardButton("Clear", callback_data=f"{ADD_CALLBACK_PREFIX}desc:clear"))
-    return InlineKeyboardMarkup([row, [InlineKeyboardButton("Cancel", callback_data=f"{ADD_CALLBACK_PREFIX}cancel")]])
+        row.insert(0, InlineKeyboardButton("💾 Keep & save", callback_data=f"{ADD_CALLBACK_PREFIX}desc:keep"))
+        row.append(InlineKeyboardButton("🧹 Clear & save", callback_data=f"{ADD_CALLBACK_PREFIX}desc:clear"))
+    return InlineKeyboardMarkup(
+        [
+            row,
+            [InlineKeyboardButton(f"{SYMBOLS['cancel']} Cancel", callback_data=f"{ADD_CALLBACK_PREFIX}cancel")],
+        ]
+    )
 
 
 def clean_person_input(text: str) -> str | None:
@@ -118,12 +130,12 @@ def format_saved(flow: dict[str, Any], *, tx_id: int) -> str:
     amt = fmt_amount(int(amount)) if isinstance(amount, int) else "-"
     return "\n".join(
         [
-            "Saved." if mode != "edit" else "Updated.",
-            f"ID: #{int(tx_id)}",
-            f"Type: {fmt_direction(str(direction))}",
-            f"Counterparty: {person}",
-            f"Amount: {amt}",
-            f"Description: {description}",
+            f"{SYMBOLS['ok']} Saved." if mode != "edit" else f"{SYMBOLS['ok']} Updated.",
+            f"{SYMBOLS['records']} ID: #{int(tx_id)}",
+            f"{SYMBOLS['totals']} Type: {fmt_direction(str(direction))}",
+            f"{SYMBOLS['person']} Counterparty: {person}",
+            f"{SYMBOLS['amount']} Amount: {amt}",
+            f"{SYMBOLS['note']} Description: {description}",
         ]
     )
 
@@ -148,7 +160,7 @@ def step_prompt(flow: dict[str, Any]) -> tuple[str, InlineKeyboardMarkup]:
     direction = flow.get("direction")
 
     if step == "choose_type":
-        return (f"{_step_label(flow, 'choose_type')}Choose the type:", type_keyboard())
+        return (f"{SYMBOLS['new']} {_step_label(flow, 'choose_type')}Choose the type:", type_keyboard())
 
     if step == "person":
         suggested = (flow.get("person") or "").strip()
@@ -157,8 +169,8 @@ def step_prompt(flow: dict[str, Any]) -> tuple[str, InlineKeyboardMarkup]:
                 "\n".join(
                     [
                         f"{_step_label(flow, 'person')}Who is the counterparty?",
-                        f"Suggested: {suggested}",
-                        "If it's correct press OK, otherwise send the correct name.",
+                        f"{SYMBOLS['person']} Suggested: {suggested}",
+                        f"Press {SYMBOLS['ok']} OK, or send the correct name.",
                     ]
                 ),
                 ok_cancel_keyboard("person:ok"),
@@ -180,8 +192,8 @@ def step_prompt(flow: dict[str, Any]) -> tuple[str, InlineKeyboardMarkup]:
                 "\n".join(
                     [
                         f"{_step_label(flow, 'amount')}What's the amount?",
-                        f"Suggested: {fmt_amount(suggested_amount)}",
-                        "If it's correct press OK, otherwise send only the number (example: 400 or 150000).",
+                        f"{SYMBOLS['amount']} Suggested: {fmt_amount(suggested_amount)}",
+                        f"Press {SYMBOLS['ok']} OK, or send only the number (example: 400 or 150000).",
                     ]
                 ),
                 ok_cancel_keyboard("amount:ok"),
@@ -202,7 +214,7 @@ def step_prompt(flow: dict[str, Any]) -> tuple[str, InlineKeyboardMarkup]:
             "\n".join(
                 [
                     f"{_step_label(flow, 'description')}Description (optional).",
-                    "Send a short description (example: Pizza), or press Skip to save.",
+                    "Send a short description (example: Pizza), or use the buttons to save.",
                     f"Current: {existing_desc or '-'}",
                 ]
             ),

@@ -5,17 +5,44 @@ from typing import Final
 
 from telegram import BotCommand, ReplyKeyboardMarkup
 
+from .dates import format_dual_datetime_utc
+
+SYMBOLS: Final[dict[str, str]] = {
+    "new": "➕",
+    "cancel": "✖️",
+    "ok": "✅",
+    "edit": "✏️",
+    "delete": "🗑️",
+    "menu": "🧭",
+    "help": "ℹ️",
+    "id": "🪪",
+    "week": "📅",
+    "month": "🗓️",
+    "records": "🧾",
+    "totals": "📊",
+    "trend": "📈",
+    "expense": "💸",
+    "payable": "📤",
+    "receivable": "📥",
+    "net": "🧮",
+    "person": "👤",
+    "note": "📝",
+    "amount": "💰",
+}
+
 DIRECTION_LABELS: Final[dict[str, str]] = {
-    "expense": "Expense",
-    "payable": "Payable (you owe)",
-    "receivable": "Receivable (owed to you)",
+    "expense": f"{SYMBOLS['expense']} Expense",
+    "payable": f"{SYMBOLS['payable']} Payable (you owe)",
+    "receivable": f"{SYMBOLS['receivable']} Receivable (owed to you)",
 }
 
 HELP_TEXT: Final[str] = """\
-To add a new record:
-- Run /add (or tap it in the menu)
-- Then follow the guided steps: type → counterparty → amount → description → confirm
-Note: for privacy, this bot works only in private chats.
+➕ Add a record
+- Run /add (or tap the button)
+- Follow the guided steps (type → counterparty → amount → description)
+- The bot saves automatically at the end
+
+Privacy: this bot works only in private chats.
 
 Commands:
 /add - start a new record (guided)
@@ -33,7 +60,7 @@ Commands:
 
 COMMAND_KEYBOARD: Final[ReplyKeyboardMarkup] = ReplyKeyboardMarkup(
     [
-        ["/add"],
+        [f"{SYMBOLS['new']} /add"],
         ["/week", "/month"],
         ["/last", "/undo"],
         ["/id", "/help", "/hide"],
@@ -42,19 +69,19 @@ COMMAND_KEYBOARD: Final[ReplyKeyboardMarkup] = ReplyKeyboardMarkup(
 )
 
 BOT_COMMANDS: Final[list[BotCommand]] = [
-    BotCommand("start", "Start guided add"),
-    BotCommand("help", "Show help"),
-    BotCommand("add", "Add a new record (guided)"),
+    BotCommand("start", "Start"),
+    BotCommand("help", "Help"),
+    BotCommand("add", "Add a record"),
     BotCommand("id", "Show your Telegram user id"),
-    BotCommand("menu", "Show command buttons"),
-    BotCommand("hide", "Hide command buttons"),
+    BotCommand("menu", "Show menu"),
+    BotCommand("hide", "Hide menu"),
     BotCommand("last", "Show recent records (optional: /last 10)"),
     BotCommand("undo", "Delete last record"),
     BotCommand("delete", "Delete a record by id (e.g. /delete 12)"),
-    BotCommand("edit", "Edit a record (e.g. /edit 12)"),
-    BotCommand("cancel", "Cancel the current operation"),
-    BotCommand("week", "Weekly summary"),
-    BotCommand("month", "Monthly summary"),
+    BotCommand("edit", "Edit a record by id (e.g. /edit 12)"),
+    BotCommand("cancel", "Cancel"),
+    BotCommand("week", "Weekly summary (last 7 days)"),
+    BotCommand("month", "Monthly summary (last 30 days)"),
 ]
 
 
@@ -73,10 +100,6 @@ def fmt_created_at(value: str | None) -> str:
         return "-"
     try:
         dt = datetime.fromisoformat(value)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        dt = dt.astimezone(timezone.utc)
-        return dt.strftime("%Y-%m-%d %H:%M:%S")
+        return format_dual_datetime_utc(dt)
     except Exception:
         return value[:19].replace("T", " ")
-
