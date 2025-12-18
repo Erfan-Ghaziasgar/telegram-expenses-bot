@@ -60,7 +60,7 @@ Commands:
 
 COMMAND_KEYBOARD: Final[ReplyKeyboardMarkup] = ReplyKeyboardMarkup(
     [
-        [f"{SYMBOLS['new']} /add"],
+        ["/add"],
         ["/week", "/month"],
         ["/last", "/undo"],
         ["/id", "/help", "/hide"],
@@ -69,9 +69,9 @@ COMMAND_KEYBOARD: Final[ReplyKeyboardMarkup] = ReplyKeyboardMarkup(
 )
 
 BOT_COMMANDS: Final[list[BotCommand]] = [
+    BotCommand("add", "Add a record"),
     BotCommand("start", "Start"),
     BotCommand("help", "Help"),
-    BotCommand("add", "Add a record"),
     BotCommand("id", "Show your Telegram user id"),
     BotCommand("menu", "Show menu"),
     BotCommand("hide", "Hide menu"),

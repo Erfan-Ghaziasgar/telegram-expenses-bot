@@ -188,7 +188,7 @@ async def _save_and_reply(
         return
 
     await _clear_flow_db(context, user_id=user_id)
-    await _reply(update, format_saved(flow, tx_id=int(saved_id)))
+    await _reply(update, format_saved(flow, tx_id=int(saved_id)), reply_markup=COMMAND_KEYBOARD)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
