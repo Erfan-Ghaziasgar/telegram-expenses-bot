@@ -610,8 +610,11 @@ async def get_week_summary(
     pool: asyncpg.Pool,
 ) -> Summary:
     now = now or datetime.now(timezone.utc)
-    start = _start_of_week(now, week_start=week_start)
-    end = now
+    # "Weekly" in the bot means "last 7 days" (rolling window), not week-to-date.
+    # This ensures the daily breakdown always has 7 days.
+    now_utc = now.astimezone(timezone.utc)
+    start = (now_utc - timedelta(days=6)).replace(hour=0, minute=0, second=0, microsecond=0)
+    end = now_utc
     return await get_summary(user_id=user_id, start=start, end=end, pool=pool)
 
 
@@ -622,8 +625,10 @@ async def get_month_summary(
     pool: asyncpg.Pool,
 ) -> Summary:
     now = now or datetime.now(timezone.utc)
-    start = _start_of_month(now)
-    end = now
+    # "Monthly" in the bot means "last 30 days" (rolling window), not month-to-date.
+    now_utc = now.astimezone(timezone.utc)
+    start = (now_utc - timedelta(days=29)).replace(hour=0, minute=0, second=0, microsecond=0)
+    end = now_utc
     return await get_summary(user_id=user_id, start=start, end=end, pool=pool)
 
 
