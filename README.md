@@ -1,6 +1,6 @@
 # Telegram Expenses Bot
 
-Logs simple expenses/debts from chat messages (Persian-friendly) into Supabase Postgres and can return weekly/monthly summaries.
+Logs simple expenses/debts into Supabase Postgres and can return weekly/monthly summaries.
 
 Runs as a FastAPI app using Telegram webhooks (suitable for Vercel serverless).
 
@@ -42,20 +42,20 @@ curl -X POST "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook" \
 
 ## Usage
 
-Send a message like:
-- `100 تومن پول نون`
-- `۲۲۰ به ممد`
-- `220 تومن به ممد باید بدم`
-- `۱۵۰ تومن ممد باید بهم بده`
+To add a new record, run `/add` and follow the guided steps:
+`type → person (if needed) → amount → description → confirm`.
+
+Privacy note: the bot is intended to be used in a private chat only (it will refuse to run in groups).
 
 Commands:
+- `/add` (start a new record - guided)
 - `/id` (show your Telegram user id)
 - `/menu` (show command buttons)
 - `/hide` (hide command buttons)
 - `/last [n]` (show recent records)
 - `/undo` (delete last record)
 - `/delete <id>` (delete by id)
-- `/edit <id> <new text>` (edit by id)
+- `/edit <id>` (edit by id - guided)
 - `/week` (weekly summary)
 - `/month` (monthly summary)
 - `/help`

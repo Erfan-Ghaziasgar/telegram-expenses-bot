@@ -131,6 +131,17 @@ async def init_db(pool: asyncpg.Pool) -> None:
         _SCHEMA_READY = True
 
 
+async def wipe_all_data(*, pool: asyncpg.Pool) -> None:
+    """
+    Delete ALL records for ALL users.
+
+    This is irreversible. Prefer running it only in controlled environments.
+    """
+    await init_db(pool)
+    async with pool.acquire() as conn:
+        await conn.execute("TRUNCATE TABLE transactions, user_counters RESTART IDENTITY;")
+
+
 async def insert_transaction(
     parsed: Dict[str, Any],
     *,
